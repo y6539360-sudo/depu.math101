@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Typing Speed Racer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; }
+    body { background: #070b14; color: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 12px; }
+    .header { width: 100%; max-width: 480px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    h1 { font-size: 1.6rem; font-weight: 800; color: #38bdf8; }
+    .stats { display: flex; gap: 8px; }
+    .stat { background: #1e293b; border: 1px solid #334155; padding: 4px 10px; border-radius: 6px; text-align: center; }
+    .stat-lbl { font-size: 0.65rem; color: #94a3b8; text-transform: uppercase; }
+    .stat-val { font-size: 1.1rem; font-weight: 700; color: #ffffff; font-variant-numeric: tabular-nums; }
+    .arena { position: relative; width: 100%; max-width: 480px; height: 320px; border: 2px solid #38bdf8; border-radius: 10px; background: #0f172a; overflow: hidden; box-shadow: 0 0 20px rgba(56, 189, 248, 0.2); }
+    .word-item { position: absolute; background: #1e293b; border: 1px solid #38bdf8; color: #38bdf8; font-family: monospace; font-size: 1rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; white-space: nowrap; transition: background 0.1s; }
+    .word-item.matched { background: #0284c7; color: #ffffff; }
+    .input-bar { width: 100%; max-width: 480px; margin-top: 12px; display: flex; gap: 8px; }
+    .type-input { flex: 1; background: #1e293b; border: 2px solid #334155; border-radius: 8px; color: #f8fafc; padding: 10px 14px; font-size: 1.1rem; font-family: monospace; outline: none; }
+    .type-input:focus { border-color: #38bdf8; }
+    .overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.92); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; z-index: 10; }
+    .overlay h2 { font-size: 2rem; font-weight: 800; color: #ef4444; }
+    .btn { background: #38bdf8; color: #070b14; font-weight: 700; border: none; padding: 10px 22px; border-radius: 6px; cursor: pointer; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Typing Racer</h1>
+    <div class="stats">
+      <div class="stat"><div class="stat-lbl">Score</div><div class="stat-val" id="score">0</div></div>
+      <div class="stat"><div class="stat-lbl">WPM</div><div class="stat-val" id="wpm">0</div></div>
+      <div class="stat"><div class="stat-lbl">Lives</div><div class="stat-val" id="lives">5</div></div>
+    </div>
+  </div>
+
+  <div class="arena" id="arena">
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">Game Over</h2>
+      <p id="ov-sub" style="color: #94a3b8;">Final Score: 0</p>
+      <button class="btn" id="startBtn">Start Engine</button>
+    </div>
+  </div>
+
+  <div class="input-bar">
+    <input type="text" class="type-input" id="typeInput" placeholder="Type words before they cross..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+  </div>
+
+  <script>
+    const WORDS = [
+      'code', 'cyber', 'matrix', 'speed', 'turbo', 'pixel', 'arcade', 'vector',
+      'laser', 'rocket', 'galaxy', 'quantum', 'system', 'engine', 'canvas', 'player',
+      'shadow', 'shield', 'energy', 'portal', 'action', 'future', 'stream', 'pulse',
+      'crypto', 'binary', 'hyper', 'vertex', 'orbit', 'meteor', 'cosmic', 'legend'
+    ];
+
+    const arena = document.getElementById('arena');
+    const typeInput = document.getElementById('typeInput');
+    const scoreEl = document.getElementById('score');
+    const wpmEl = document.getElementById('wpm');
+    const livesEl = document.getElementById('lives');
+    const overlay = document.getElementById('overlay');
+    const ovTitle = document.getElementById('ov-title');
+    const ovSub = document.getElementById('ov-sub');
+    const startBtn = document.getElementById('startBtn');
+
+    let activeWords = [];
+    let score = 0;
+    let lives = 5;
+    let totalTypedWords = 0;
+    let startTime = 0;
+    let isGameOver = false;
+    let spawnTimer = null;
+    let animId = null;
+
+    let audioCtx = null;
+    function beep(f, dur = 0.05) {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.frequency.value = f;
+        o.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+        o.start(); o.stop(audioCtx.currentTime + dur);
+      } catch (e) {}
+    }
+
+    function spawnWord() {
+      if (isGameOver) return;
+      const text = WORDS[Math.floor(Math.random() * WORDS.length)];
+      const el = document.createElement('div');
+      el.className = 'word-item';
+      el.innerText = text;
+      arena.appendChild(el);
+
+      const y = 20 + Math.random() * 240;
+      activeWords.push({
+        text,
+        el,
+        x: 0,
+        y,
+        speed: 0.6 + Math.random() * 0.7 + (score / 300)
+      });
+    }
+
+    function resetGame() {
+      activeWords.forEach(w => w.el.remove());
+      activeWords = [];
+      score = 0;
+      lives = 5;
+      totalTypedWords = 0;
+      startTime = Date.now();
+      isGameOver = false;
+      scoreEl.innerText = 0;
+      wpmEl.innerText = 0;
+      livesEl.innerText = 5;
+      overlay.style.display = 'none';
+      typeInput.value = '';
+      typeInput.focus();
+
+      clearInterval(spawnTimer);
+      spawnTimer = setInterval(spawnWord, 2000);
+      spawnWord();
+    }
+
+    function update() {
+      if (!isGameOver) {
+        const maxX = arena.clientWidth;
+
+        for (let i = activeWords.length - 1; i >= 0; i--) {
+          const w = activeWords[i];
+          w.x += w.speed;
+          w.el.style.left = `${w.x}px`;
+          w.el.style.top = `${w.y}px`;
+
+          if (w.x + w.el.clientWidth >= maxX) {
+            // Escaped
+            w.el.remove();
+            activeWords.splice(i, 1);
+            lives--;
+            livesEl.innerText = lives;
+            beep(180, 0.15);
+            if (lives <= 0) {
+              endGame();
+              return;
+            }
+          }
+        }
+      }
+      animId = requestAnimationFrame(update);
+    }
+
+    function endGame() {
+      isGameOver = true;
+      clearInterval(spawnTimer);
+      ovTitle.innerText = 'Game Over';
+      ovSub.innerText = `Final Score: ${score} · WPM: ${wpmEl.innerText}`;
+      overlay.style.display = 'flex';
+      beep(130, 0.3);
+    }
+
+    typeInput.addEventListener('input', (e) => {
+      const val = typeInput.value.trim().toLowerCase();
+      const matchIndex = activeWords.findIndex(w => w.text.toLowerCase() === val);
+
+      if (matchIndex !== -1) {
+        const matched = activeWords[matchIndex];
+        matched.el.remove();
+        activeWords.splice(matchIndex, 1);
+        typeInput.value = '';
+
+        score += matched.text.length * 10;
+        totalTypedWords++;
+        scoreEl.innerText = score;
+
+        const mins = (Date.now() - startTime) / 60000;
+        if (mins > 0.05) {
+          const wpm = Math.round(totalTypedWords / mins);
+          wpmEl.innerText = wpm;
+        }
+
+        beep(880, 0.08);
+      }
+    });
+
+    startBtn.onclick = resetGame;
+
+    resetGame();
+    animId = requestAnimationFrame(update);
+  </script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Connect Four</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; }
+    body { background: #0b0f19; color: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 12px; }
+    .header { width: 100%; max-width: 420px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    h1 { font-size: 1.6rem; font-weight: 800; color: #38bdf8; }
+    .turn-badge { background: #1e293b; border: 1px solid #334155; padding: 6px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .turn-disc { width: 14px; height: 14px; border-radius: 50%; }
+    .board-container { background: #1d4ed8; padding: 10px; border-radius: 14px; box-shadow: 0 10px 25px rgba(29, 78, 216, 0.4); display: flex; flex-direction: column; gap: 8px; }
+    .col-selectors { display: grid; grid-template-columns: repeat(7, 44px); gap: 6px; }
+    .drop-btn { background: rgba(255, 255, 255, 0.15); border: none; height: 26px; border-radius: 6px; color: #ffffff; cursor: pointer; font-size: 0.8rem; transition: background 0.15s; }
+    .drop-btn:hover { background: rgba(255, 255, 255, 0.3); }
+    .grid { display: grid; grid-template-columns: repeat(7, 44px); gap: 6px; }
+    .slot { width: 44px; height: 44px; background: #0b0f19; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
+    .slot.p1::after { content: ''; width: 38px; height: 38px; background: #ef4444; border-radius: 50%; box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); }
+    .slot.p2::after { content: ''; width: 38px; height: 38px; background: #facc15; border-radius: 50%; box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); }
+    .slot.win::after { border: 3px solid #ffffff; animation: pulse 1s infinite alternate; }
+    @keyframes pulse { from { transform: scale(0.95); } to { transform: scale(1.05); } }
+    .actions { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 420px; margin-top: 12px; }
+    .btn { background: #334155; color: #ffffff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85rem; }
+    .btn:hover { background: #475569; }
+    .btn.active { background: #38bdf8; color: #0b0f19; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Connect Four</h1>
+    <div class="turn-badge" id="turnBadge">
+      <div class="turn-disc" id="turnDisc" style="background: #ef4444;"></div>
+      <span id="turnText">Red's Turn</span>
+    </div>
+  </div>
+
+  <div class="board-container">
+    <div class="col-selectors" id="colSelectors"></div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn active" id="btnAI">VS AI (Yellow)</button>
+    <button class="btn" id="btn2P">2P Local</button>
+    <button class="btn" id="btnReset" style="background: #ef4444; color: white;">Restart</button>
+  </div>
+
+  <script>
+    const ROWS = 6;
+    const COLS = 7;
+    let board = Array(ROWS).fill(null).map(() => Array(COLS).fill(0));
+    let turn = 1; // 1 = Red, 2 = Yellow
+    let isAI = true;
+    let isGameOver = false;
+
+    const gridEl = document.getElementById('grid');
+    const colSelectorsEl = document.getElementById('colSelectors');
+    const turnDisc = document.getElementById('turnDisc');
+    const turnText = document.getElementById('turnText');
+    const btnAI = document.getElementById('btnAI');
+    const btn2P = document.getElementById('btn2P');
+    const btnReset = document.getElementById('btnReset');
+
+    function initBoard() {
+      board = Array(ROWS).fill(null).map(() => Array(COLS).fill(0));
+      turn = 1;
+      isGameOver = false;
+      updateTurnUI();
+
+      colSelectorsEl.innerHTML = '';
+      for (let c = 0; c < COLS; c++) {
+        const btn = document.createElement('button');
+        btn.className = 'drop-btn';
+        btn.innerText = '↓';
+        btn.onclick = () => dropPiece(c);
+        colSelectorsEl.appendChild(btn);
+      }
+
+      renderGrid();
+    }
+
+    function renderGrid(winCoords = []) {
+      gridEl.innerHTML = '';
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const slot = document.createElement('div');
+          slot.className = 'slot';
+          if (board[r][c] === 1) slot.classList.add('p1');
+          if (board[r][c] === 2) slot.classList.add('p2');
+          if (winCoords.some(pt => pt.r === r && pt.c === c)) slot.classList.add('win');
+          slot.onclick = () => dropPiece(c);
+          gridEl.appendChild(slot);
+        }
+      }
+    }
+
+    function updateTurnUI() {
+      if (isGameOver) return;
+      if (turn === 1) {
+        turnDisc.style.background = '#ef4444';
+        turnText.innerText = "Red's Turn";
+      } else {
+        turnDisc.style.background = '#facc15';
+        turnText.innerText = isAI ? "AI thinking..." : "Yellow's Turn";
+      }
+    }
+
+    function dropPiece(col) {
+      if (isGameOver) return;
+      if (isAI && turn === 2) return;
+
+      // Find bottom open row in col
+      let placedRow = -1;
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (board[r][col] === 0) {
+          placedRow = r;
+          break;
+        }
+      }
+      if (placedRow === -1) return; // Column full
+
+      board[placedRow][col] = turn;
+      const win = checkWin(placedRow, col, turn);
+
+      if (win) {
+        isGameOver = true;
+        renderGrid(win);
+        turnText.innerText = `${turn === 1 ? 'Red' : 'Yellow'} Wins! 🎉`;
+        return;
+      }
+
+      // Check draw
+      if (board.every(row => row.every(cell => cell !== 0))) {
+        isGameOver = true;
+        turnText.innerText = "It's a Draw!";
+        return;
+      }
+
+      turn = turn === 1 ? 2 : 1;
+      updateTurnUI();
+      renderGrid();
+
+      if (isAI && turn === 2) {
+        setTimeout(aiMove, 300);
+      }
+    }
+
+    function aiMove() {
+      if (isGameOver) return;
+      // 1. Can AI win in 1 move?
+      for (let c = 0; c < COLS; c++) {
+        const r = getDropRow(c);
+        if (r !== -1) {
+          board[r][c] = 2;
+          if (checkWin(r, c, 2)) {
+            finishMove(r, c, 2);
+            return;
+          }
+          board[r][c] = 0;
+        }
+      }
+
+      // 2. Can Player 1 win next turn? Block it!
+      for (let c = 0; c < COLS; c++) {
+        const r = getDropRow(c);
+        if (r !== -1) {
+          board[r][c] = 1;
+          if (checkWin(r, c, 1)) {
+            board[r][c] = 2;
+            finishMove(r, c, 2);
+            return;
+          }
+          board[r][c] = 0;
+        }
+      }
+
+      // 3. Prefer center column
+      const colOrder = [3, 2, 4, 1, 5, 0, 6];
+      for (let c of colOrder) {
+        const r = getDropRow(c);
+        if (r !== -1) {
+          board[r][c] = 2;
+          finishMove(r, c, 2);
+          return;
+        }
+      }
+    }
+
+    function getDropRow(col) {
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (board[r][col] === 0) return r;
+      }
+      return -1;
+    }
+
+    function finishMove(r, c, player) {
+      const win = checkWin(r, c, player);
+      if (win) {
+        isGameOver = true;
+        renderGrid(win);
+        turnText.innerText = `Yellow (AI) Wins!`;
+        return;
+      }
+      turn = 1;
+      updateTurnUI();
+      renderGrid();
+    }
+
+    function checkWin(r, c, p) {
+      const dirs = [
+        [{ r: 0, c: 1 }, { r: 0, c: -1 }], // Horizontal
+        [{ r: 1, c: 0 }, { r: -1, c: 0 }], // Vertical
+        [{ r: 1, c: 1 }, { r: -1, c: -1 }], // Diagonal /
+        [{ r: 1, c: -1 }, { r: -1, c: 1 }]  // Diagonal \
+      ];
+
+      for (let dir of dirs) {
+        let coords = [{ r, c }];
+        for (let step of dir) {
+          let currR = r + step.r;
+          let currC = c + step.c;
+          while (currR >= 0 && currR < ROWS && currC >= 0 && currC < COLS && board[currR][currC] === p) {
+            coords.push({ r: currR, c: currC });
+            currR += step.r;
+            currC += step.c;
+          }
+        }
+        if (coords.length >= 4) return coords;
+      }
+      return null;
+    }
+
+    btnAI.onclick = () => { isAI = true; btnAI.className = 'btn active'; btn2P.className = 'btn'; initBoard(); };
+    btn2P.onclick = () => { isAI = false; btn2P.className = 'btn active'; btnAI.className = 'btn'; initBoard(); };
+    btnReset.onclick = initBoard;
+
+    initBoard();
+  </script>
+</body>
+</html>

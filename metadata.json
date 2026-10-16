@@ -1,0 +1,8 @@
+{
+  "name": "Math 101 Portal",
+  "description": "Secure access portal and curated arcade games library with protected access.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
